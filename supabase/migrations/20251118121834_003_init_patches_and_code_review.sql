@@ -1,4 +1,3 @@
-
 /*
   # Initialize patches and code review tables
 
