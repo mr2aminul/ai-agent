@@ -76,7 +76,6 @@ Code documentation generator → inline and module-level docs.
 
 Learning from history → AI can remember past patches, fixes, and developer preferences.
 
-
 Predictive task assignment → AI can suggest next tasks based on project context.
 
 7️⃣ Optional Advanced Features
