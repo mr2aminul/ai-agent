@@ -1,4 +1,3 @@
-
 /*
   # Initialize conversations and messages tables
 
