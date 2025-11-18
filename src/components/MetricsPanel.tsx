@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { ProjectMetrics } from '@/types';
 import { AlertCircle, Code2, Package, TestTube, TrendingUp } from 'lucide-react';
