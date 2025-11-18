@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Project } from '@/types';
-import { ChevronDown, ChevronRight, FileText, Folder, Code } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, Folder, Code, Loader } from 'lucide-react';
+import { createFileClient, FileOperationResult } from '@/lib/fileOperations';
 
 interface FileItem {
   name: string;
@@ -15,8 +16,44 @@ interface ProjectExplorerProps {
   onFileSelect: (path: string) => void;
 }
 
-export default function ProjectExplorer({ project, files, onFileSelect }: ProjectExplorerProps) {
+export default function ProjectExplorer({ project, files: initialFiles, onFileSelect }: ProjectExplorerProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [files, setFiles] = useState<FileItem[]>(initialFiles);
+  const [loading, setLoading] = useState(false);
+  const [fileClient, setFileClient] = useState<ReturnType<typeof createFileClient> | null>(null);
+
+  useEffect(() => {
+    if (project?.path) {
+      setFileClient(createFileClient(project.path));
+      loadProjectFiles();
+    }
+  }, [project?.path]);
+
+  const loadProjectFiles = async () => {
+    if (!project?.path || !fileClient) return;
+
+    setLoading(true);
+    try {
+      const result = await fileClient.listDirectory('.');
+      if (result.success && result.items) {
+        const fileTree = buildFileTree(result.items);
+        setFiles(fileTree);
+      }
+    } catch (error) {
+      console.error('Failed to load project files:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const buildFileTree = (items: any[]): FileItem[] => {
+    return items.map(item => ({
+      name: item.name,
+      path: item.path,
+      isDirectory: item.type === 'directory',
+      children: []
+    }));
+  };
 
   const toggleExpanded = (path: string) => {
     const newExpanded = new Set(expanded);
@@ -90,7 +127,11 @@ export default function ProjectExplorer({ project, files, onFileSelect }: Projec
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
-        {files.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            <Loader size={20} className="animate-spin text-primary-500" />
+          </div>
+        ) : files.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-400">
             <p className="text-sm">No files found</p>
           </div>

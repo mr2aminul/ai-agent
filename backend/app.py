@@ -1,7 +1,7 @@
 import os
 import json
 import time
-import threading
+import uuid
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +11,8 @@ from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import requests
 
+from database import SQLiteDB
+from file_operations import FileOperations
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 try:
     from langchain.vectorstores import Chroma
@@ -23,13 +25,23 @@ app = Flask(__name__)
 CORS(app)
 
 LMSTUDIO_URL = os.environ.get("PYTHON_LMSTUDIO_URL", "http://localhost:1234/v1")
-DEFAULT_MODEL = os.environ.get("PYTHON_DEFAULT_MODEL", "gpt-oss-20b")
+DEFAULT_MODEL = os.environ.get("PYTHON_DEFAULT_MODEL", "qwen/qwen3-4b-2507")
 CHROMA_DIR = os.environ.get("PYTHON_CHROMA_DIR", "./chroma_db")
 WEB_SEARCH_API = os.environ.get("WEB_SEARCH_API", "duckduckgo")
+DB_PATH = os.environ.get("PYTHON_DB_PATH", "./project_agent.db")
 
 embedder = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
 vectordb = None
 repo = None
+db = SQLiteDB(DB_PATH)
+file_ops = {}
+
+
+def get_file_ops(project_path: str) -> FileOperations:
+    """Get file operations instance for project"""
+    if project_path not in file_ops:
+        file_ops[project_path] = FileOperations(project_path)
+    return file_ops[project_path]
 
 
 def init_vectordb(project_path):
@@ -268,6 +280,7 @@ def api_generate_workplan():
     data = request.json or {}
     instruction = data.get("instruction", "")
     project_path = data.get("project_path", "")
+    conversation_id = data.get("conversation_id", str(uuid.uuid4()))
 
     if not instruction:
         return jsonify({"error": "Missing instruction"}), 400
@@ -279,7 +292,16 @@ def api_generate_workplan():
         context_texts = retrieve_context(instruction, k=8)
         workplan = generate_workplan(instruction, context_texts)
 
-        return jsonify({"ok": True, "workplan": workplan})
+        workplan_id = str(uuid.uuid4())
+        db.create_workplan(
+            workplan_id,
+            conversation_id,
+            workplan.get("title", ""),
+            workplan.get("description", ""),
+            workplan.get("tasks", [])
+        )
+
+        return jsonify({"ok": True, "workplan": workplan, "workplan_id": workplan_id})
     except Exception as e:
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
@@ -337,8 +359,282 @@ def api_logs():
         "lmstudio": LMSTUDIO_URL,
         "model": DEFAULT_MODEL,
         "chroma_dir": CHROMA_DIR,
-        "vectordb_loaded": vectordb is not None
+        "vectordb_loaded": vectordb is not None,
+        "database": DB_PATH
     })
+
+
+@app.route("/api/files/read", methods=["POST"])
+def api_read_file():
+    data = request.json or {}
+    project_path = data.get("project_path")
+    file_path = data.get("file_path")
+
+    if not project_path or not file_path:
+        return jsonify({"error": "Missing parameters"}), 400
+
+    try:
+        ops = get_file_ops(project_path)
+        result = ops.read_file(file_path)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/files/write", methods=["POST"])
+def api_write_file():
+    data = request.json or {}
+    project_path = data.get("project_path")
+    file_path = data.get("file_path")
+    content = data.get("content", "")
+    overwrite = data.get("overwrite", True)
+
+    if not project_path or not file_path:
+        return jsonify({"error": "Missing parameters"}), 400
+
+    try:
+        ops = get_file_ops(project_path)
+        result = ops.write_file(file_path, content, overwrite)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/files/append", methods=["POST"])
+def api_append_file():
+    data = request.json or {}
+    project_path = data.get("project_path")
+    file_path = data.get("file_path")
+    content = data.get("content", "")
+
+    if not project_path or not file_path:
+        return jsonify({"error": "Missing parameters"}), 400
+
+    try:
+        ops = get_file_ops(project_path)
+        result = ops.append_file(file_path, content)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/files/delete", methods=["POST"])
+def api_delete_file():
+    data = request.json or {}
+    project_path = data.get("project_path")
+    file_path = data.get("file_path")
+
+    if not project_path or not file_path:
+        return jsonify({"error": "Missing parameters"}), 400
+
+    try:
+        ops = get_file_ops(project_path)
+        result = ops.delete_file(file_path)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/files/list", methods=["POST"])
+def api_list_directory():
+    data = request.json or {}
+    project_path = data.get("project_path")
+    dir_path = data.get("dir_path", ".")
+
+    if not project_path:
+        return jsonify({"error": "Missing project_path"}), 400
+
+    try:
+        ops = get_file_ops(project_path)
+        result = ops.list_directory(dir_path)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/files/mkdir", methods=["POST"])
+def api_create_directory():
+    data = request.json or {}
+    project_path = data.get("project_path")
+    dir_path = data.get("dir_path")
+
+    if not project_path or not dir_path:
+        return jsonify({"error": "Missing parameters"}), 400
+
+    try:
+        ops = get_file_ops(project_path)
+        result = ops.create_directory(dir_path)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/files/rmdir", methods=["POST"])
+def api_delete_directory():
+    data = request.json or {}
+    project_path = data.get("project_path")
+    dir_path = data.get("dir_path")
+
+    if not project_path or not dir_path:
+        return jsonify({"error": "Missing parameters"}), 400
+
+    try:
+        ops = get_file_ops(project_path)
+        result = ops.delete_directory(dir_path)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/files/rename", methods=["POST"])
+def api_rename_file():
+    data = request.json or {}
+    project_path = data.get("project_path")
+    old_path = data.get("old_path")
+    new_path = data.get("new_path")
+
+    if not project_path or not old_path or not new_path:
+        return jsonify({"error": "Missing parameters"}), 400
+
+    try:
+        ops = get_file_ops(project_path)
+        result = ops.rename_file(old_path, new_path)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/files/copy", methods=["POST"])
+def api_copy_file():
+    data = request.json or {}
+    project_path = data.get("project_path")
+    source_path = data.get("source_path")
+    dest_path = data.get("dest_path")
+
+    if not project_path or not source_path or not dest_path:
+        return jsonify({"error": "Missing parameters"}), 400
+
+    try:
+        ops = get_file_ops(project_path)
+        result = ops.copy_file(source_path, dest_path)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/files/info", methods=["POST"])
+def api_file_info():
+    data = request.json or {}
+    project_path = data.get("project_path")
+    file_path = data.get("file_path")
+
+    if not project_path or not file_path:
+        return jsonify({"error": "Missing parameters"}), 400
+
+    try:
+        ops = get_file_ops(project_path)
+        result = ops.get_file_info(file_path)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/files/search", methods=["POST"])
+def api_search_files():
+    data = request.json or {}
+    project_path = data.get("project_path")
+    pattern = data.get("pattern", "*")
+    dir_path = data.get("dir_path", ".")
+
+    if not project_path or not pattern:
+        return jsonify({"error": "Missing parameters"}), 400
+
+    try:
+        ops = get_file_ops(project_path)
+        result = ops.search_files(pattern, dir_path)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/projects", methods=["GET"])
+def api_get_projects():
+    try:
+        projects = db.get_projects()
+        return jsonify({"ok": True, "projects": projects})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/projects", methods=["POST"])
+def api_create_project():
+    data = request.json or {}
+    name = data.get("name")
+    path = data.get("path")
+
+    if not name or not path:
+        return jsonify({"error": "Missing parameters"}), 400
+
+    try:
+        project_id = str(uuid.uuid4())
+        db.create_project(project_id, name, path)
+        return jsonify({"ok": True, "project_id": project_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/conversations/<project_id>", methods=["GET"])
+def api_get_conversations(project_id):
+    try:
+        conversations = db.get_conversations(project_id)
+        return jsonify({"ok": True, "conversations": conversations})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/conversations", methods=["POST"])
+def api_create_conversation():
+    data = request.json or {}
+    project_id = data.get("project_id")
+    title = data.get("title")
+    model = data.get("model", DEFAULT_MODEL)
+
+    if not project_id:
+        return jsonify({"error": "Missing project_id"}), 400
+
+    try:
+        conversation_id = str(uuid.uuid4())
+        db.create_conversation(conversation_id, project_id, title or "New Conversation", model)
+        return jsonify({"ok": True, "conversation_id": conversation_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/messages/<conversation_id>", methods=["GET"])
+def api_get_messages(conversation_id):
+    try:
+        messages = db.get_messages(conversation_id)
+        return jsonify({"ok": True, "messages": messages})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/messages", methods=["POST"])
+def api_create_message():
+    data = request.json or {}
+    conversation_id = data.get("conversation_id")
+    role = data.get("role")
+    content = data.get("content")
+
+    if not conversation_id or not role or not content:
+        return jsonify({"error": "Missing parameters"}), 400
+
+    try:
+        message_id = str(uuid.uuid4())
+        db.create_message(message_id, conversation_id, role, content)
+        return jsonify({"ok": True, "message_id": message_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
@@ -346,6 +642,6 @@ if __name__ == "__main__":
     print(f"LM Studio: {LMSTUDIO_URL}")
     print(f"Default Model: {DEFAULT_MODEL}")
     print(f"Chroma DB: {CHROMA_DIR}")
+    print(f"Database: {DB_PATH}")
     print(f"Web Search: {WEB_SEARCH_API}")
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
-
