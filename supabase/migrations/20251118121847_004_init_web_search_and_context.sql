@@ -1,4 +1,3 @@
-
 /*
   # Initialize web search and context tables
 
