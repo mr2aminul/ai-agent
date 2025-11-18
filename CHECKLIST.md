@@ -350,3 +350,21 @@
 **All items are implemented and ready to use! 🚀**
 
 This is a complete, production-ready platform. All core features are functional and documented. Ready to extend with advanced features as needed.
+
+
+**You must be ensure this will uses the sqlite3 database**
+not bolt database
+**also you can use npm install @lmstudio/sdk --save**
+Quick Example: Chat with a Llama Model
+index.ts
+import { LMStudioClient } from "@lmstudio/sdk";
+const client = new LMStudioClient();
+
+const model = await client.llm.model("qwen/qwen3-4b-2507");
+const result = await model.respond("What is the meaning of life?");
+
+console.info(result.content);
+
+**also note this: i said that llm before to create file or update the existing project files**
+i said to the llm to create a test.txt file, but he give me that, how can i create that test.txt file using php. but my query was to create the new file in my system directly in to the project directory `eg dir: C:\Users\Aminul Islam\Desktop\GitHub\civic-management\xhr`.
+my question is, if the llm can't create, read, update, delete my project directory's files and folders. then how can he update/maintain my entire project.
