@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { Send, Loader, AlertCircle } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
