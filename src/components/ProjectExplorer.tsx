@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Project } from '@/types';
 import { ChevronDown, ChevronRight, FileText, Folder, Code } from 'lucide-react';
