@@ -1,4 +1,3 @@
-
 import React, { useEffect } from 'react';
 import { Task, Workplan } from '@/types';
 import { CheckCircle2, Circle, Clock, AlertCircle, Zap } from 'lucide-react';
