@@ -1,4 +1,3 @@
-
 /*
   # Initialize workplans and tasks tables
 
