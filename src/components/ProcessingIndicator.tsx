@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Loader, CheckCircle, AlertCircle } from 'lucide-react';
 import { ProcessingIndicator as ProcessingIndicatorType } from '@/types';
