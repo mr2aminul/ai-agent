@@ -1,4 +1,3 @@
-
 # AI Project Agent - Progress Tracker & Requirements
 
 ## Project Overview
